@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>页面不存在 - 闲置集市</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { display:flex; flex-direction:column; min-height:100vh; }
+    .notfound { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; text-align:center; }
+    .notfound-emoji { font-size:100px; margin-bottom:24px; animation: bounce 1.5s infinite; }
+    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-20px)} }
+    .notfound h1 { font-size:80px; font-weight:900; color:var(--primary); line-height:1; }
+    .notfound h2 { font-size:24px; margin:12px 0 8px; }
+    .notfound p { color:var(--text-light); margin-bottom:32px; }
+    .notfound-actions { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/" class="navbar-brand"><span>🛍️</span> 闲置集市</a>
+  </div>
+</nav>
+
+<div class="notfound">
+  <div class="notfound-emoji">🔍</div>
+  <h1>404</h1>
+  <h2>页面走丢了</h2>
+  <p>你访问的页面不存在，可能已被删除或链接有误</p>
+  <div class="notfound-actions">
+    <a href="/" class="btn btn-primary btn-lg">🏠 回到首页</a>
+    <button class="btn btn-outline btn-lg" onclick="history.back()">← 返回上页</button>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-bottom"><p>© 2024 闲置集市</p></div>
+  </div>
+</footer>
+</body>
+</html>

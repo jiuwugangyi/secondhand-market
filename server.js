@@ -38,6 +38,7 @@ db.serialize(() => {
     location TEXT,
     status TEXT DEFAULT 'active',
     views INTEGER DEFAULT 0,
+    negotiable INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
@@ -60,6 +61,16 @@ db.serialize(() => {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, product_id)
   )`);
+  // 新增：举报表
+  db.run(`CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    user_id INTEGER,
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  // 兼容旧数据库：尝试添加 negotiable 列
+  db.run(`ALTER TABLE products ADD COLUMN negotiable INTEGER DEFAULT 0`, () => {});
 });
 
 // 中间件
@@ -173,17 +184,29 @@ app.put('/api/me', requireAuth, (req, res) => {
   );
 });
 
+// 头像上传
+app.post('/api/me/avatar', requireAuth, upload.single('avatar'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请上传图片' });
+  const avatarUrl = '/uploads/' + req.file.filename;
+  db.run('UPDATE users SET avatar = ? WHERE id = ?', [avatarUrl, req.session.userId], (err) => {
+    if (err) return res.status(500).json({ error: '更新失败' });
+    res.json({ success: true, avatar: avatarUrl });
+  });
+});
+
 // ==================== 商品 API ====================
 
 // 获取商品列表
 app.get('/api/products', (req, res) => {
-  const { category, keyword, sort = 'newest', page = 1, limit = 12, status = 'active' } = req.query;
+  const { category, keyword, sort = 'newest', page = 1, limit = 12, status = 'active', minPrice, maxPrice } = req.query;
   const offset = (page - 1) * limit;
   let where = ['p.status = ?'];
   let params = [status];
 
   if (category && category !== 'all') { where.push('p.category = ?'); params.push(category); }
   if (keyword) { where.push('(p.title LIKE ? OR p.description LIKE ?)'); params.push(`%${keyword}%`, `%${keyword}%`); }
+  if (minPrice) { where.push('p.price >= ?'); params.push(parseFloat(minPrice)); }
+  if (maxPrice) { where.push('p.price <= ?'); params.push(parseFloat(maxPrice)); }
 
   const orderMap = { newest: 'p.created_at DESC', oldest: 'p.created_at ASC', price_asc: 'p.price ASC', price_desc: 'p.price DESC', popular: 'p.views DESC' };
   const orderBy = orderMap[sort] || 'p.created_at DESC';
@@ -201,6 +224,18 @@ app.get('/api/products', (req, res) => {
   });
 });
 
+// 热门商品（按浏览量降序，取8个）
+app.get('/api/products/hot', (req, res) => {
+  db.all(`SELECT p.*, u.username, u.avatar FROM products p
+    JOIN users u ON p.user_id = u.id
+    WHERE p.status = 'active'
+    ORDER BY p.views DESC LIMIT 8`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    rows.forEach(r => { try { r.images = JSON.parse(r.images || '[]'); } catch { r.images = []; } });
+    res.json(rows);
+  });
+});
+
 // 获取单个商品
 app.get('/api/products/:id', (req, res) => {
   db.run('UPDATE products SET views = views + 1 WHERE id = ?', [req.params.id]);
@@ -212,14 +247,53 @@ app.get('/api/products/:id', (req, res) => {
   });
 });
 
+// 相似商品（同分类，排除自身，取6个）
+app.get('/api/products/:id/similar', (req, res) => {
+  db.get('SELECT category FROM products WHERE id = ?', [req.params.id], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: '商品不存在' });
+    db.all(`SELECT p.*, u.username, u.avatar FROM products p
+      JOIN users u ON p.user_id = u.id
+      WHERE p.category = ? AND p.id != ? AND p.status = 'active'
+      ORDER BY p.created_at DESC LIMIT 6`,
+      [row.category, req.params.id], (err2, rows) => {
+        if (err2) return res.status(500).json({ error: '查询失败' });
+        rows.forEach(r => { try { r.images = JSON.parse(r.images || '[]'); } catch { r.images = []; } });
+        res.json(rows);
+      }
+    );
+  });
+});
+
+// 商品统计（浏览数+收藏数）
+app.get('/api/products/:id/stats', (req, res) => {
+  db.get('SELECT views FROM products WHERE id = ?', [req.params.id], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: '商品不存在' });
+    db.get('SELECT COUNT(*) as favorites FROM favorites WHERE product_id = ?', [req.params.id], (err2, fav) => {
+      res.json({ views: row.views, favorites: fav?.favorites || 0 });
+    });
+  });
+});
+
+// 举报商品
+app.post('/api/products/:id/report', (req, res) => {
+  const { reason } = req.body;
+  const userId = req.session.userId || null;
+  db.run('INSERT INTO reports (product_id, user_id, reason) VALUES (?, ?, ?)',
+    [req.params.id, userId, reason || ''], (err) => {
+      if (err) return res.status(500).json({ error: '举报失败' });
+      res.json({ success: true });
+    }
+  );
+});
+
 // 发布商品
 app.post('/api/products', requireAuth, upload.array('images', 6), (req, res) => {
-  const { title, description, price, category, condition, location } = req.body;
+  const { title, description, price, category, condition, location, negotiable } = req.body;
   if (!title || !price || !category || !condition) return res.status(400).json({ error: '请填写必要信息' });
   const images = req.files ? req.files.map(f => '/uploads/' + f.filename) : [];
-  db.run(`INSERT INTO products (user_id, title, description, price, category, condition, images, location)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [req.session.userId, title, description, parseFloat(price), category, condition, JSON.stringify(images), location],
+  db.run(`INSERT INTO products (user_id, title, description, price, category, condition, images, location, negotiable)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [req.session.userId, title, description, parseFloat(price), category, condition, JSON.stringify(images), location, negotiable ? 1 : 0],
     function(err) {
       if (err) return res.status(500).json({ error: '发布失败' });
       res.json({ success: true, productId: this.lastID });
@@ -231,13 +305,15 @@ app.post('/api/products', requireAuth, upload.array('images', 6), (req, res) => 
 app.put('/api/products/:id', requireAuth, upload.array('images', 6), (req, res) => {
   db.get('SELECT * FROM products WHERE id = ? AND user_id = ?', [req.params.id, req.session.userId], (err, product) => {
     if (err || !product) return res.status(403).json({ error: '无权操作' });
-    const { title, description, price, category, condition, location, status } = req.body;
+    const { title, description, price, category, condition, location, status, negotiable } = req.body;
     let images = JSON.parse(product.images || '[]');
     if (req.files && req.files.length > 0) images = req.files.map(f => '/uploads/' + f.filename);
-    db.run(`UPDATE products SET title=?, description=?, price=?, category=?, condition=?, images=?, location=?, status=? WHERE id=?`,
+    db.run(`UPDATE products SET title=?, description=?, price=?, category=?, condition=?, images=?, location=?, status=?, negotiable=? WHERE id=?`,
       [title || product.title, description || product.description, price || product.price,
        category || product.category, condition || product.condition, JSON.stringify(images),
-       location || product.location, status || product.status, req.params.id],
+       location || product.location, status || product.status,
+       negotiable !== undefined ? (negotiable ? 1 : 0) : product.negotiable,
+       req.params.id],
       (err2) => {
         if (err2) return res.status(500).json({ error: '更新失败' });
         res.json({ success: true });
@@ -256,7 +332,14 @@ app.delete('/api/products/:id', requireAuth, (req, res) => {
 
 // 我发布的商品
 app.get('/api/my/products', requireAuth, (req, res) => {
-  db.all('SELECT * FROM products WHERE user_id = ? ORDER BY created_at DESC', [req.session.userId], (err, rows) => {
+  const { status } = req.query;
+  let sql = 'SELECT * FROM products WHERE user_id = ? ORDER BY created_at DESC';
+  let params = [req.session.userId];
+  if (status && status !== 'all') {
+    sql = 'SELECT * FROM products WHERE user_id = ? AND status = ? ORDER BY created_at DESC';
+    params = [req.session.userId, status];
+  }
+  db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: '查询失败' });
     rows.forEach(r => { try { r.images = JSON.parse(r.images || '[]'); } catch { r.images = []; } });
     res.json(rows);
@@ -359,6 +442,19 @@ app.get('/api/session', (req, res) => {
     res.json({ loggedIn: true, userId: req.session.userId, username: req.session.username });
   } else {
     res.json({ loggedIn: false });
+  }
+});
+
+// 404 处理（API 之外的路由返回 404.html）
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: '接口不存在' });
+  }
+  const notFoundPath = path.join(__dirname, 'public', '404.html');
+  if (fs.existsSync(notFoundPath)) {
+    res.status(404).sendFile(notFoundPath);
+  } else {
+    res.status(404).send('Not Found');
   }
 });
 

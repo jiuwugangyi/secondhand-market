@@ -16,15 +16,21 @@
 
 <div class="profile-header">
   <div class="profile-header-inner">
-    <div class="profile-avatar-wrap">
+    <div class="profile-avatar-wrap" id="avatarWrap" style="cursor:pointer" title="点击更换头像">
       <img src="/img/default-avatar.png" class="profile-avatar" id="profileAvatar">
+      <div style="position:absolute;bottom:0;right:0;background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:14px">📷</div>
+      <input type="file" id="avatarInput" accept="image/*" style="display:none">
     </div>
-    <div>
-      <div class="profile-name" id="profileName">加载中...</div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="profile-name" id="profileName">加载中...</div>
+        <span class="credit-badge" id="creditBadge"></span>
+      </div>
       <div class="profile-bio" id="profileBio"></div>
       <div class="profile-stats">
         <div class="profile-stat"><div class="num" id="statProducts">0</div><div class="label">发布</div></div>
         <div class="profile-stat"><div class="num" id="statFavorites">0</div><div class="label">收藏</div></div>
+        <div class="profile-stat"><div class="num" id="statSold">0</div><div class="label">已售</div></div>
       </div>
     </div>
   </div>
@@ -32,22 +38,36 @@
 
 <div class="container">
   <div class="section">
-    <div class="tabs" id="tabs">
+    <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('products')">📦 我的发布</button>
       <button class="tab-btn" onclick="switchTab('favorites')">❤️ 我的收藏</button>
       <button class="tab-btn" onclick="switchTab('messages')">💬 消息</button>
       <button class="tab-btn" onclick="switchTab('settings')">⚙️ 设置</button>
     </div>
 
+    <!-- 我的发布 -->
     <div class="tab-content active" id="tab-products">
+      <!-- 状态筛选 -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="sort-btn active" data-status="all" onclick="filterMyProducts('all',this)">全部</button>
+        <button class="sort-btn" data-status="active" onclick="filterMyProducts('active',this)">在售</button>
+        <button class="sort-btn" data-status="sold" onclick="filterMyProducts('sold',this)">已售</button>
+        <button class="sort-btn" data-status="reserved" onclick="filterMyProducts('reserved',this)">已预订</button>
+      </div>
       <div id="myProducts" class="loading"><div class="spinner"></div></div>
     </div>
+
+    <!-- 我的收藏 -->
     <div class="tab-content" id="tab-favorites">
       <div id="myFavorites" class="loading"><div class="spinner"></div></div>
     </div>
+
+    <!-- 消息 -->
     <div class="tab-content" id="tab-messages">
       <div id="myMessages" class="loading"><div class="spinner"></div></div>
     </div>
+
+    <!-- 设置 -->
     <div class="tab-content" id="tab-settings">
       <div style="max-width:480px">
         <form id="settingsForm">
@@ -66,17 +86,41 @@
   </div>
 </div>
 
-<footer><p>© 2024 闲置集市</p></footer>
+<!-- 底部导航 -->
+<nav class="bottom-nav">
+  <a href="/" class="bottom-nav-item"><span class="bottom-nav-icon">🏠</span><span>首页</span></a>
+  <a href="#" class="bottom-nav-item"><span class="bottom-nav-icon">🔍</span><span>搜索</span></a>
+  <a href="/" class="bottom-nav-item bottom-nav-publish"><span class="bottom-nav-icon">＋</span></a>
+  <a href="/messages.html" class="bottom-nav-item"><span class="bottom-nav-icon">💬</span><span>消息</span></a>
+  <a href="/profile.html" class="bottom-nav-item active"><span class="bottom-nav-icon">👤</span><span>我的</span></a>
+</nav>
+
+<footer class="site-footer">
+  <div class="container"><div class="footer-bottom"><p>© 2024 闲置集市</p></div></div>
+</footer>
+
 <script src="/js/app.js"></script>
 <script>
+function getCreditLevel(count) {
+  if (count >= 20) return { label: '🥇 金牌卖家', cls: 'credit-gold' };
+  if (count >= 10) return { label: '⭐ 优质卖家', cls: 'credit-good' };
+  if (count >= 3)  return { label: '👍 普通卖家', cls: 'credit-normal' };
+  return { label: '🌱 新手卖家', cls: 'credit-new' };
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', ['products','favorites','messages','settings'][i]===name));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  if (name==='products') loadMyProducts();
+  if (name==='products') loadMyProducts('all');
   if (name==='favorites') loadMyFavorites();
   if (name==='messages') loadMyMessages();
-  if (name==='settings') loadSettings();
+}
+
+function filterMyProducts(status, btn) {
+  document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadMyProducts(status);
 }
 
 async function loadProfile() {
@@ -84,29 +128,43 @@ async function loadProfile() {
     const user = await api.get('/api/me');
     document.getElementById('profileName').textContent = user.username;
     document.getElementById('profileBio').textContent = user.bio || '这个人很懒，什么都没写~';
+    document.getElementById('profileAvatar').src = user.avatar || '/img/default-avatar.png';
     document.getElementById('settingsPhone').value = user.phone || '';
     document.getElementById('settingsBio').value = user.bio || '';
   } catch { location.href = '/'; }
 }
 
-async function loadMyProducts() {
+async function loadMyProducts(status = 'all') {
   const el = document.getElementById('myProducts');
   el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const products = await api.get('/api/my/products');
-    document.getElementById('statProducts').textContent = products.length;
+    const url = status === 'all' ? '/api/my/products' : `/api/my/products?status=${status}`;
+    const products = await api.get(url);
+
+    // 统计
+    const allProducts = await api.get('/api/my/products');
+    document.getElementById('statProducts').textContent = allProducts.length;
+    document.getElementById('statSold').textContent = allProducts.filter(p => p.status === 'sold').length;
+    const credit = getCreditLevel(allProducts.length);
+    const badge = document.getElementById('creditBadge');
+    badge.textContent = credit.label;
+    badge.className = 'credit-badge ' + credit.cls;
+
     if (!products.length) {
-      el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>还没有发布商品</h3><p><a href="/" style="color:var(--primary)">去发布第一件闲置</a></p></div>`;
+      el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>暂无商品</h3><p><a href="/" style="color:var(--primary)">去发布第一件闲置</a></p></div>`;
       return;
     }
     el.innerHTML = `<div class="product-grid">${products.map(p => `
       <div class="product-card" onclick="location.href='/product.html?id=${p.id}'">
-        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img">` : `<div class="product-img-placeholder">📷</div>`}
+        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img" loading="lazy">` : `<div class="product-img-placeholder">📷</div>`}
         ${p.status!=='active'?`<span class="status-badge status-${p.status}">${p.status==='sold'?'已售出':'已预订'}</span>`:''}
         <div class="product-info">
           <div class="product-title">${p.title}</div>
           <div class="product-price">${formatPrice(p.price)}</div>
-          <div class="product-meta"><span>${p.condition}</span><span>${formatTime(p.created_at)}</span></div>
+          <div class="product-meta">
+            <span>${p.condition}</span>
+            <span>👁 ${p.views}</span>
+          </div>
         </div>
       </div>
     `).join('')}</div>`;
@@ -125,7 +183,7 @@ async function loadMyFavorites() {
     }
     el.innerHTML = `<div class="product-grid">${products.map(p => `
       <div class="product-card" onclick="location.href='/product.html?id=${p.id}'">
-        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img">` : `<div class="product-img-placeholder">📷</div>`}
+        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img" loading="lazy">` : `<div class="product-img-placeholder">📷</div>`}
         <div class="product-info">
           <div class="product-title">${p.title}</div>
           <div class="product-price">${formatPrice(p.price)}</div>
@@ -141,13 +199,10 @@ async function loadMyMessages() {
   el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
     const msgs = await api.get('/api/my/messages');
-    if (!msgs.length) {
-      el.innerHTML = `<div class="empty-state"><div class="icon">💬</div><h3>暂无消息</h3></div>`;
-      return;
-    }
+    if (!msgs.length) { el.innerHTML = `<div class="empty-state"><div class="icon">💬</div><h3>暂无消息</h3></div>`; return; }
     el.innerHTML = msgs.map(m => `
-      <div style="display:flex;align-items:center;gap:14px;padding:16px;background:#fff;border-radius:var(--radius);margin-bottom:10px;cursor:pointer;box-shadow:var(--shadow)" onclick="location.href='/product.html?id=${m.product_id}'">
-        <img src="${m.other_avatar||'/img/default-avatar.png'}" style="width:48px;height:48px;border-radius:50%;object-fit:cover">
+      <div style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--card-bg);border-radius:var(--radius);margin-bottom:10px;cursor:pointer;box-shadow:var(--shadow)" onclick="location.href='/product.html?id=${m.product_id}'">
+        <img src="${m.other_avatar||'/img/default-avatar.png'}" style="width:48px;height:48px;border-radius:50%;object-fit:cover" loading="lazy">
         <div style="flex:1;min-width:0">
           <div style="font-weight:700">${m.other_username}</div>
           <div style="font-size:13px;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.content}</div>
@@ -160,30 +215,41 @@ async function loadMyMessages() {
   } catch (e) { el.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>${e.message}</h3></div>`; }
 }
 
-async function loadSettings() {
-  // Already loaded in loadProfile
-}
-
-document.getElementById('settingsForm')?.addEventListener('submit', async e => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  try {
-    await fetch('/api/me', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: fd.get('phone'), bio: fd.get('bio') }),
-      credentials: 'include'
-    });
-    showToast('保存成功', 'success');
-    loadProfile();
-  } catch (e) { showToast(e.message, 'error'); }
-});
-
+// 头像上传
 document.addEventListener('DOMContentLoaded', async () => {
   await checkSession();
   if (!currentUser) { location.href = '/'; return; }
   loadProfile();
-  loadMyProducts();
+  loadMyProducts('all');
+
+  // 头像上传
+  document.getElementById('avatarWrap').onclick = () => document.getElementById('avatarInput').click();
+  document.getElementById('avatarInput').addEventListener('change', async function() {
+    if (!this.files[0]) return;
+    const fd = new FormData();
+    fd.append('avatar', this.files[0]);
+    try {
+      const r = await api.upload('/api/me/avatar', fd);
+      document.getElementById('profileAvatar').src = r.avatar;
+      showToast('头像已更新', 'success');
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+
+  // 设置表单
+  document.getElementById('settingsForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await fetch('/api/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: fd.get('phone'), bio: fd.get('bio') }),
+        credentials: 'include'
+      });
+      showToast('保存成功', 'success');
+      loadProfile();
+    } catch (e) { showToast(e.message, 'error'); }
+  });
 });
 </script>
 </body>

@@ -19,7 +19,22 @@
 </nav>
 
 <div class="container">
-  <div id="productDetail" class="loading"><div class="spinner"></div></div>
+  <div id="productDetail" style="padding:32px 0"><div class="loading"><div class="spinner"></div></div></div>
+  <!-- 相似商品 -->
+  <div class="section" id="similarSection" style="display:none">
+    <div class="section-header">
+      <h2 class="section-title">🔗 相似商品</h2>
+    </div>
+    <div class="product-scroll" id="similarGrid"></div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <button class="lightbox-close" onclick="closeLightbox()">×</button>
+  <button class="lightbox-prev" onclick="event.stopPropagation();lightboxPrev()">‹</button>
+  <img id="lightboxImg" src="">
+  <button class="lightbox-next" onclick="event.stopPropagation();lightboxNext()">›</button>
 </div>
 
 <!-- 消息弹窗 -->
@@ -41,6 +56,29 @@
   </div>
 </div>
 
+<!-- 举报弹窗 -->
+<div class="modal-overlay" id="reportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">举报商品 🚨</h3>
+      <button class="modal-close" onclick="closeModal('reportModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">举报原因</label>
+        <select id="reportReason" class="form-control">
+          <option value="虚假商品">虚假商品</option>
+          <option value="价格欺诈">价格欺诈</option>
+          <option value="违禁物品">违禁物品</option>
+          <option value="重复发布">重复发布</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <button class="btn btn-danger" style="width:100%" onclick="submitReport()">提交举报</button>
+    </div>
+  </div>
+</div>
+
 <!-- 登录弹窗 -->
 <div class="modal-overlay" id="loginModal">
   <div class="modal">
@@ -50,26 +88,41 @@
     </div>
     <div class="modal-body">
       <form id="loginForm">
-        <div class="form-group">
-          <label class="form-label">用户名</label>
-          <input name="username" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">密码</label>
-          <input name="password" type="password" class="form-control" required>
-        </div>
+        <div class="form-group"><label class="form-label">用户名</label><input name="username" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">密码</label><input name="password" type="password" class="form-control" required></div>
         <button type="submit" class="btn btn-primary btn-lg" style="width:100%">登录</button>
       </form>
     </div>
   </div>
 </div>
 
-<footer><p>© 2024 闲置集市</p></footer>
+<!-- 底部导航 -->
+<nav class="bottom-nav">
+  <a href="/" class="bottom-nav-item"><span class="bottom-nav-icon">🏠</span><span>首页</span></a>
+  <a href="#" class="bottom-nav-item"><span class="bottom-nav-icon">🔍</span><span>搜索</span></a>
+  <a href="/" class="bottom-nav-item bottom-nav-publish"><span class="bottom-nav-icon">＋</span></a>
+  <a href="/messages.html" class="bottom-nav-item"><span class="bottom-nav-icon">💬</span><span>消息</span></a>
+  <a href="/profile.html" class="bottom-nav-item"><span class="bottom-nav-icon">👤</span><span>我的</span></a>
+</nav>
+
+<footer class="site-footer">
+  <div class="container"><div class="footer-bottom"><p>© 2024 闲置集市</p></div></div>
+</footer>
 
 <script src="/js/app.js"></script>
 <script>
 let product = null;
 let currentImgIndex = 0;
+let lightboxImgs = [];
+
+// 记录浏览历史
+function saveToRecent(p) {
+  let recent = JSON.parse(localStorage.getItem('recentViewed') || '[]');
+  recent = recent.filter(r => r.id !== p.id);
+  recent.unshift({ id: p.id, title: p.title, price: p.price, image: p.images?.[0] || '' });
+  recent = recent.slice(0, 8);
+  localStorage.setItem('recentViewed', JSON.stringify(recent));
+}
 
 async function loadProduct() {
   const id = new URLSearchParams(location.search).get('id');
@@ -77,42 +130,79 @@ async function loadProduct() {
   try {
     product = await api.get(`/api/products/${id}`);
     document.title = product.title + ' - 闲置集市';
+    saveToRecent(product);
     renderDetail();
+    loadStats();
+    loadSimilar();
   } catch (e) {
-    document.getElementById('productDetail').innerHTML = `<div class="empty-state"><div class="icon">😢</div><h3>商品不存在</h3><p>${e.message}</p></div>`;
+    document.getElementById('productDetail').innerHTML = `<div class="empty-state"><div class="icon">😢</div><h3>商品不存在</h3><p>${e.message}</p><a href="/" class="btn btn-primary" style="margin-top:16px">返回首页</a></div>`;
   }
+}
+
+async function loadStats() {
+  try {
+    const stats = await api.get(`/api/products/${product.id}/stats`);
+    const el = document.getElementById('productStats');
+    if (el) el.innerHTML = `👁 ${stats.views} 次浏览 &nbsp;·&nbsp; ❤️ ${stats.favorites} 人收藏`;
+  } catch {}
+}
+
+async function loadSimilar() {
+  try {
+    const rows = await api.get(`/api/products/${product.id}/similar`);
+    if (!rows.length) return;
+    document.getElementById('similarSection').style.display = 'block';
+    document.getElementById('similarGrid').innerHTML = rows.map(p => `
+      <div class="product-card-mini" onclick="location.href='/product.html?id=${p.id}'">
+        ${p.images?.[0] ? `<img src="${p.images[0]}" loading="lazy">` : `<div class="product-img-placeholder" style="height:120px">📷</div>`}
+        <div style="padding:8px">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.title}</div>
+          <div style="color:var(--primary);font-weight:700">¥${p.price}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch {}
 }
 
 function renderDetail() {
   const conditionClass = {'全新':'condition-new','99新':'condition-like-new','良好':'condition-good','一般':'condition-fair'}[product.condition]||'condition-good';
   const imgs = product.images?.length ? product.images : [];
-  const mainImg = imgs[0] ? `<img src="${imgs[0]}" class="img-main" id="mainImg">` : `<div class="img-main" style="display:flex;align-items:center;justify-content:center;font-size:80px;background:var(--bg)">📷</div>`;
-  const thumbs = imgs.length > 1 ? `<div class="img-thumbs">${imgs.map((img,i)=>`<img src="${img}" class="img-thumb ${i===0?'active':''}" onclick="switchImg(${i})">`).join('')}</div>` : '';
+  lightboxImgs = imgs;
   const isOwner = currentUser && currentUser.userId === product.user_id;
+
+  const mainImgHtml = imgs.length
+    ? `<img src="${imgs[0]}" class="img-main" id="mainImg" onclick="openLightbox(0)" style="cursor:zoom-in">`
+    : `<div class="img-main" style="display:flex;align-items:center;justify-content:center;font-size:80px;background:var(--bg)">📷</div>`;
+
+  const thumbsHtml = imgs.length > 1
+    ? `<div class="img-thumbs">${imgs.map((img,i)=>`<img src="${img}" class="img-thumb ${i===0?'active':''}" onclick="switchImg(${i})" loading="lazy">`).join('')}</div>`
+    : '';
 
   document.getElementById('productDetail').innerHTML = `
     <div style="padding:16px 0 8px"><a href="/" style="color:var(--text-light);text-decoration:none;font-size:14px">← 返回列表</a></div>
     <div class="product-detail">
       <div class="img-gallery">
-        ${mainImg}
-        ${thumbs}
+        ${mainImgHtml}
+        ${thumbsHtml}
+        ${imgs.length ? `<p style="font-size:12px;color:var(--text-light);margin-top:6px;text-align:center">点击图片可放大查看</p>` : ''}
       </div>
       <div class="detail-info">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="product-condition ${conditionClass}">${product.condition}</span>
           <span style="font-size:13px;color:var(--text-light)">${product.category}</span>
+          ${product.negotiable ? `<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">💬 可议价</span>` : ''}
           ${product.status !== 'active' ? `<span class="product-condition" style="background:#f8d7da;color:#721c24">${product.status==='sold'?'已售出':'已预订'}</span>` : ''}
         </div>
         <h1 style="font-size:24px;font-weight:800;margin:12px 0">${product.title}</h1>
         <div class="detail-price">${formatPrice(product.price)}</div>
         <div class="detail-meta">
           <span>📍 ${product.location || '未知位置'}</span>
-          <span>👁️ ${product.views} 次浏览</span>
+          <span id="productStats">👁 ${product.views} 次浏览</span>
           <span>🕐 ${formatTime(product.created_at)}</span>
         </div>
         ${product.description ? `<div class="detail-desc">${product.description}</div>` : ''}
         <div class="seller-card">
-          <img src="${product.avatar || '/img/default-avatar.png'}" class="seller-avatar">
+          <img src="${product.avatar || '/img/default-avatar.png'}" class="seller-avatar" loading="lazy">
           <div class="seller-info">
             <div class="seller-name">${product.username}</div>
             <div class="seller-since">卖家</div>
@@ -135,6 +225,12 @@ function renderDetail() {
             <button class="btn btn-outline" id="favBtn" onclick="toggleFavDetail()">♡ 收藏</button>
           `}
         </div>
+        ${!isOwner ? `
+          <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="shareProduct()">🔗 分享</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="openModal('reportModal')">🚨 举报</button>
+          </div>
+        ` : ''}
         ${product.phone && !isOwner ? `<p style="margin-top:12px;font-size:14px;color:var(--text-light)">📞 卖家电话：${product.phone}</p>` : ''}
       </div>
     </div>
@@ -142,11 +238,57 @@ function renderDetail() {
   if (!isOwner) checkFavorite();
 }
 
+// Lightbox
+function openLightbox(i) {
+  if (!lightboxImgs.length) return;
+  currentImgIndex = i;
+  document.getElementById('lightboxImg').src = lightboxImgs[i];
+  document.getElementById('lightbox').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox(e) {
+  if (e && e.target !== document.getElementById('lightbox') && !e.target.classList.contains('lightbox-close')) return;
+  document.getElementById('lightbox').classList.remove('show');
+  document.body.style.overflow = '';
+}
+function lightboxPrev() { currentImgIndex = (currentImgIndex - 1 + lightboxImgs.length) % lightboxImgs.length; document.getElementById('lightboxImg').src = lightboxImgs[currentImgIndex]; }
+function lightboxNext() { currentImgIndex = (currentImgIndex + 1) % lightboxImgs.length; document.getElementById('lightboxImg').src = lightboxImgs[currentImgIndex]; }
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('lightbox').classList.contains('show')) return;
+  if (e.key === 'ArrowLeft') lightboxPrev();
+  if (e.key === 'ArrowRight') lightboxNext();
+  if (e.key === 'Escape') { document.getElementById('lightbox').classList.remove('show'); document.body.style.overflow = ''; }
+});
+
 function switchImg(i) {
   currentImgIndex = i;
   const main = document.getElementById('mainImg');
   if (main) main.src = product.images[i];
   document.querySelectorAll('.img-thumb').forEach((t,j) => t.classList.toggle('active', j===i));
+}
+
+function shareProduct() {
+  const url = location.href;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => showToast('链接已复制到剪贴板', 'success'));
+  } else {
+    const input = document.createElement('input');
+    input.value = url;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    document.body.removeChild(input);
+    showToast('链接已复制', 'success');
+  }
+}
+
+async function submitReport() {
+  const reason = document.getElementById('reportReason').value;
+  try {
+    await api.post(`/api/products/${product.id}/report`, { reason });
+    showToast('举报已提交，我们会尽快处理', 'success');
+    closeModal('reportModal');
+  } catch (e) { showToast(e.message, 'error'); }
 }
 
 async function checkFavorite() {
@@ -184,17 +326,11 @@ async function loadMessages() {
   try {
     const msgs = await api.get(`/api/messages/${product.id}`);
     const box = document.getElementById('chatMessages');
-    if (!msgs.length) {
-      box.innerHTML = `<div style="text-align:center;color:var(--text-light);font-size:14px;padding:20px">发送消息开始聊天吧 👋</div>`;
-      return;
-    }
+    if (!msgs.length) { box.innerHTML = `<div style="text-align:center;color:var(--text-light);font-size:14px;padding:20px">发送消息开始聊天吧 👋</div>`; return; }
     box.innerHTML = msgs.map(m => `
       <div class="chat-msg ${m.sender_id === currentUser.userId ? 'mine' : ''}">
-        <img src="${m.sender_avatar || '/img/default-avatar.png'}" class="chat-msg-avatar">
-        <div>
-          <div class="chat-msg-bubble">${m.content}</div>
-          <div class="chat-msg-time">${formatTime(m.created_at)}</div>
-        </div>
+        <img src="${m.sender_avatar || '/img/default-avatar.png'}" class="chat-msg-avatar" loading="lazy">
+        <div><div class="chat-msg-bubble">${m.content}</div><div class="chat-msg-time">${formatTime(m.created_at)}</div></div>
       </div>
     `).join('');
     box.scrollTop = box.scrollHeight;
