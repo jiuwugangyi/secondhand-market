@@ -436,6 +436,59 @@ app.get('/api/my/unread', requireAuth, (req, res) => {
   );
 });
 
+// 会话列表（每个对话只取最新一条）
+app.get('/api/my/conversations', requireAuth, (req, res) => {
+  const uid = req.session.userId;
+  db.all(`
+    SELECT
+      m.*,
+      p.title as product_title,
+      p.images as product_images,
+      u.id as other_id,
+      u.username as other_username,
+      u.avatar as other_avatar,
+      (SELECT COUNT(*) FROM messages
+        WHERE product_id = m.product_id
+        AND sender_id = m.other_id_calc
+        AND receiver_id = ? AND is_read = 0) as unread_count
+    FROM (
+      SELECT m2.*,
+        CASE WHEN m2.sender_id = ? THEN m2.receiver_id ELSE m2.sender_id END as other_id_calc,
+        MAX(m2.id) as max_id
+      FROM messages m2
+      WHERE m2.sender_id = ? OR m2.receiver_id = ?
+      GROUP BY m2.product_id, CASE WHEN m2.sender_id = ? THEN m2.receiver_id ELSE m2.sender_id END
+    ) m
+    JOIN products p ON m.product_id = p.id
+    JOIN users u ON u.id = m.other_id_calc
+    ORDER BY m.created_at DESC
+  `, [uid, uid, uid, uid, uid], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    rows.forEach(r => {
+      try { r.product_images = JSON.parse(r.product_images || '[]'); } catch { r.product_images = []; }
+    });
+    res.json(rows);
+  });
+});
+
+// 获取某个会话的消息（productId + otherUserId）
+app.get('/api/messages/:productId/:otherUserId', requireAuth, (req, res) => {
+  const uid = req.session.userId;
+  const { productId, otherUserId } = req.params;
+  db.all(`SELECT m.*, u.username as sender_name, u.avatar as sender_avatar
+    FROM messages m JOIN users u ON m.sender_id = u.id
+    WHERE m.product_id = ?
+      AND ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
+    ORDER BY m.created_at ASC`,
+    [productId, uid, otherUserId, otherUserId, uid], (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      db.run('UPDATE messages SET is_read = 1 WHERE product_id = ? AND sender_id = ? AND receiver_id = ?',
+        [productId, otherUserId, uid]);
+      res.json(rows);
+    }
+  );
+});
+
 // 会话检查
 app.get('/api/session', (req, res) => {
   if (req.session.userId) {

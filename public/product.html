@@ -318,8 +318,7 @@ async function toggleFavDetail() {
 
 async function openChat() {
   if (!currentUser) { showToast('请先登录', 'warning'); openLoginModal(); return; }
-  openModal('msgModal');
-  loadMessages();
+  location.href = `/chat.html?product=${product.id}&user=${product.user_id}`;
 }
 
 async function loadMessages() {

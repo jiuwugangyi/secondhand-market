@@ -131,7 +131,7 @@ function updateNavbar(loggedIn) {
           onclick="toggleDropdown()" title="${currentUser.username}">
         <div class="dropdown" id="userDropdown">
           <a href="/profile.html">👤 个人中心</a>
-          <a href="/profile.html?tab=messages">💬 消息
+          <a href="/chat.html">💬 消息
             <span class="badge" id="unreadBadge" style="display:none">0</span>
           </a>
           <a href="/profile.html?tab=favorites">❤️ 我的收藏</a>

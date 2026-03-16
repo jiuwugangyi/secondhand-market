@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>消息中心 - 闲置集市</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .chat-layout { display: grid; grid-template-columns: 320px 1fr; gap: 0; height: calc(100vh - 64px); }
+    .chat-sidebar { background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    .chat-header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .chat-header h2 { font-size: 18px; font-weight: 700; }
+    .chat-list { flex: 1; overflow-y: auto; }
+    .chat-item { display: flex; gap: 12px; padding: 14px 16px; cursor: pointer; transition: all 0.2s; border-bottom: 1px solid var(--border-light); }
+    .chat-item:hover, .chat-item.active { background: var(--bg); }
+    .chat-item.active { border-left: 3px solid var(--primary); }
+    .chat-item-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .chat-item-body { flex: 1; min-width: 0; }
+    .chat-item-name { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 6px; }
+    .chat-item-preview { font-size: 13px; color: var(--text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+    .chat-item-product { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+    .chat-item-time { font-size: 11px; color: var(--text-light); white-space: nowrap; }
+    .chat-item-unread { background: var(--danger); color: #fff; font-size: 11px; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+    .chat-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-light); }
+    .chat-empty .icon { font-size: 64px; margin-bottom: 16px; }
+    .chat-main { display: flex; flex-direction: column; background: var(--bg); }
+    .chat-topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--border); }
+    .chat-topbar-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer; }
+    .chat-topbar-info { flex: 1; }
+    .chat-topbar-name { font-weight: 700; font-size: 16px; cursor: pointer; }
+    .chat-topbar-name:hover { color: var(--primary); }
+    .chat-topbar-product { font-size: 13px; color: var(--text-light); cursor: pointer; }
+    .chat-topbar-product:hover { color: var(--primary); }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .chat-message { display: flex; gap: 10px; max-width: 70%; }
+    .chat-message.mine { align-self: flex-end; flex-direction: row-reverse; }
+    .chat-message-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; cursor: pointer; }
+    .chat-message-content { display: flex; flex-direction: column; gap: 4px; }
+    .chat-message-bubble { padding: 10px 14px; border-radius: 18px; font-size: 14px; line-height: 1.5; word-break: break-word; }
+    .chat-message:not(.mine) .chat-message-bubble { background: #fff; border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .chat-message.mine .chat-message-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+    .chat-message-time { font-size: 11px; color: var(--text-light); }
+    .chat-input-area { padding: 12px 20px; background: #fff; border-top: 1px solid var(--border); display: flex; gap: 12px; align-items: center; }
+    .chat-input { flex: 1; padding: 10px 16px; border: 1px solid var(--border); border-radius: 24px; outline: none; font-size: 14px; }
+    .chat-input:focus { border-color: var(--primary); }
+    .chat-send-btn { background: var(--primary); color: #fff; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .chat-send-btn:hover { transform: scale(1.05); }
+    .chat-send-btn:disabled { background: var(--text-light); cursor: not-allowed; transform: none; }
+    .chat-product-card { display: flex; gap: 10px; padding: 10px 14px; background: #fff; border-radius: 12px; border: 1px solid var(--border); cursor: pointer; margin-bottom: 8px; align-self: center; max-width: 400px; }
+    .chat-product-card img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; }
+    .chat-product-card-info { flex: 1; }
+    .chat-product-card-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-product-card-price { color: var(--primary); font-weight: 700; font-size: 15px; }
+    .chat-date-divider { text-align: center; font-size: 12px; color: var(--text-light); margin: 8px 0; }
+    @media (max-width: 768px) {
+      .chat-layout { grid-template-columns: 1fr; }
+      .chat-sidebar { display: none; }
+      .chat-sidebar.show { display: flex; position: fixed; inset: 0; z-index: 100; }
+      .chat-back-btn { display: block !important; }
+    }
+    .chat-back-btn { display: none; background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+    .chat-menu-btn { display: none; background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+    @media (max-width: 768px) { .chat-menu-btn { display: block; } }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/" class="navbar-brand"><span>🛍️</span> 闲置集市</a>
+    <div class="navbar-actions"></div>
+  </div>
+</nav>
+
+<div class="chat-layout">
+  <!-- 左侧会话列表 -->
+  <div class="chat-sidebar" id="chatSidebar">
+    <div class="chat-header">
+      <h2>💬 消息中心</h2>
+    </div>
+    <div class="chat-list" id="chatList">
+      <div class="loading" style="padding:40px"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- 右侧聊天区域 -->
+  <div class="chat-main" id="chatMain">
+    <!-- 空状态 -->
+    <div class="chat-empty" id="chatEmpty">
+      <div class="icon">💬</div>
+      <h3>选择一个对话开始聊天</h3>
+      <p>点击左侧会话查看消息</p>
+    </div>
+
+    <!-- 聊天界面 -->
+    <div id="chatRoom" style="display:none;flex-direction:column;height:100%">
+      <div class="chat-topbar">
+        <button class="chat-back-btn" onclick="showSidebar()">←</button>
+        <img src="/img/default-avatar.png" class="chat-topbar-avatar" id="topbarAvatar" onclick="goToOtherProfile()">
+        <div class="chat-topbar-info">
+          <div class="chat-topbar-name" id="topbarName" onclick="goToOtherProfile()">加载中...</div>
+          <div class="chat-topbar-product" id="topbarProduct" onclick="goToProduct()">📦 查看商品</div>
+        </div>
+        <button class="chat-menu-btn" onclick="showSidebar()">☰</button>
+      </div>
+
+      <!-- 商品卡片 -->
+      <div class="chat-product-card" id="chatProductCard" onclick="goToProduct()">
+        <img src="" id="chatProductImg">
+        <div class="chat-product-card-info">
+          <div class="chat-product-card-title" id="chatProductTitle"></div>
+          <div class="chat-product-card-price" id="chatProductPrice"></div>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input-area">
+        <input type="text" class="chat-input" id="messageInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMessage()">
+        <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 登录弹窗 -->
+<div class="modal-overlay" id="loginModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">请先登录</h3>
+      <button class="modal-close" onclick="closeModal('loginModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="loginForm">
+        <div class="form-group"><label class="form-label">用户名</label><input name="username" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">密码</label><input name="password" type="password" class="form-control" required></div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">登录</button>
+      </form>
+      <p style="text-align:center;margin-top:16px;font-size:14px">还没有账号？<a href="#" onclick="closeModal('loginModal');openModal('registerModal');return false">立即注册</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- 注册弹窗 -->
+<div class="modal-overlay" id="registerModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">注册账号</h3>
+      <button class="modal-close" onclick="closeModal('registerModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="registerForm">
+        <div class="form-group"><label class="form-label">用户名</label><input name="username" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">密码</label><input name="password" type="password" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">确认密码</label><input name="password2" type="password" class="form-control" required></div>
+        <div class="form-group"><label class="form-label">手机号</label><input name="phone" class="form-control" placeholder="可选，方便交易联系"></div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">注册</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+<script>
+let currentConv = null; // { productId, otherId, otherName, otherAvatar, productTitle, productPrice, productImage }
+let conversations = [];
+let messages = [];
+let pollingTimer = null;
+
+async function init() {
+  await checkSession();
+  if (!currentUser) {
+    openModal('loginModal');
+    return;
+  }
+  loadConversations();
+  // 检查 URL 参数是否有指定会话
+  const params = new URLSearchParams(location.search);
+  const productId = params.get('product');
+  const userId = params.get('user');
+  if (productId && userId) {
+    // 延迟加载，等会话列表加载完
+    setTimeout(() => openConversation(productId, parseInt(userId)), 500);
+  }
+}
+
+async function loadConversations() {
+  try {
+    conversations = await api.get('/api/my/conversations');
+    renderConversations();
+  } catch (e) {
+    document.getElementById('chatList').innerHTML = `<div class="empty-state" style="padding:40px"><div class="icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+function renderConversations() {
+  const list = document.getElementById('chatList');
+  if (!conversations.length) {
+    list.innerHTML = `<div class="empty-state" style="padding:40px"><div class="icon">💬</div><h3>暂无消息</h3><p>去逛逛商品，和卖家聊聊吧</p><a href="/" class="btn btn-primary" style="margin-top:12px">去首页</a></div>`;
+    return;
+  }
+  list.innerHTML = conversations.map(c => `
+    <div class="chat-item ${currentConv?.productId == c.product_id && currentConv?.otherId == c.other_id ? 'active' : ''}"
+      onclick="openConversation(${c.product_id}, ${c.other_id})">
+      <img src="${c.other_avatar || '/img/default-avatar.png'}" class="chat-item-avatar">
+      <div class="chat-item-body">
+        <div class="chat-item-name">${c.other_username}
+          ${c.unread_count > 0 ? `<span class="chat-item-unread">${c.unread_count}</span>` : ''}
+        </div>
+        <div class="chat-item-preview">${c.content}</div>
+        <div class="chat-item-product">📦 ${c.product_title}</div>
+      </div>
+      <div class="chat-item-time">${formatTimeShort(c.created_at)}</div>
+    </div>
+  `).join('');
+}
+
+function formatTimeShort(t) {
+  const d = new Date(t);
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + '分';
+  if (diff < 86400) return Math.floor(diff/3600) + '小时';
+  if (diff < 604800) return Math.floor(diff/86400) + '天';
+  return d.toLocaleDateString('zh-CN', {month:'numeric', day:'numeric'});
+}
+
+async function openConversation(productId, otherId) {
+  // 找到会话信息
+  const conv = conversations.find(c => c.product_id == productId && c.other_id == otherId);
+  if (!conv) {
+    // 可能是新会话，需要加载商品信息
+    try {
+      const product = await api.get(`/api/products/${productId}`);
+      currentConv = {
+        productId: parseInt(productId),
+        otherId: parseInt(otherId),
+        otherName: product.username,
+        otherAvatar: product.avatar,
+        productTitle: product.title,
+        productPrice: product.price,
+        productImage: product.images?.[0] || ''
+      };
+    } catch (e) { showToast('加载失败', 'error'); return; }
+  } else {
+    currentConv = {
+      productId: conv.product_id,
+      otherId: conv.other_id,
+      otherName: conv.other_username,
+      otherAvatar: conv.other_avatar,
+      productTitle: conv.product_title,
+      productPrice: null, // 需要额外获取
+      productImage: conv.product_images?.[0] || ''
+    };
+  }
+
+  // 更新顶部栏
+  document.getElementById('topbarName').textContent = currentConv.otherName;
+  document.getElementById('topbarAvatar').src = currentConv.otherAvatar || '/img/default-avatar.png';
+  document.getElementById('chatProductTitle').textContent = currentConv.productTitle;
+  document.getElementById('chatProductImg').src = currentConv.productImage || '/img/default-avatar.png';
+  if (currentConv.productPrice) {
+    document.getElementById('chatProductPrice').textContent = '¥' + currentConv.productPrice;
+  } else {
+    // 获取商品价格
+    api.get(`/api/products/${currentConv.productId}`).then(p => {
+      document.getElementById('chatProductPrice').textContent = '¥' + p.price;
+    }).catch(() => {});
+  }
+
+  // 显示聊天界面
+  document.getElementById('chatEmpty').style.display = 'none';
+  document.getElementById('chatRoom').style.display = 'flex';
+
+  // 移动端隐藏侧边栏
+  if (window.innerWidth <= 768) {
+    document.getElementById('chatSidebar').classList.remove('show');
+  }
+
+  renderConversations(); // 更新高亮
+  loadMessages();
+  startPolling();
+
+  // 更新 URL
+  history.replaceState(null, '', `?product=${productId}&user=${otherId}`);
+}
+
+async function loadMessages() {
+  if (!currentConv) return;
+  try {
+    messages = await api.get(`/api/messages/${currentConv.productId}/${currentConv.otherId}`);
+    renderMessages();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function renderMessages() {
+  const box = document.getElementById('chatMessages');
+  if (!messages.length) {
+    box.innerHTML = `<div style="text-align:center;color:var(--text-light);padding:40px">开始聊天吧 👋<br><small>可以询问商品详情、议价或约见面交易</small></div>`;
+    return;
+  }
+
+  let lastDate = null;
+  box.innerHTML = messages.map(m => {
+    const d = new Date(m.created_at);
+    const dateStr = d.toLocaleDateString('zh-CN');
+    let dateDivider = '';
+    if (dateStr !== lastDate) {
+      lastDate = dateStr;
+      dateDivider = `<div class="chat-date-divider">${dateStr}</div>`;
+    }
+    const isMine = m.sender_id === currentUser.userId;
+    return dateDivider + `
+      <div class="chat-message ${isMine ? 'mine' : ''}">
+        <img src="${m.sender_avatar || '/img/default-avatar.png'}" class="chat-message-avatar"
+          onclick="location.href='/profile.html?id=${m.sender_id}'">
+        <div class="chat-message-content">
+          <div class="chat-message-bubble">${escapeHtml(m.content)}</div>
+          <div class="chat-message-time">${d.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 滚动到底部
+  box.scrollTop = box.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('messageInput');
+  const content = input.value.trim();
+  if (!content || !currentConv) return;
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+
+  try {
+    await api.post('/api/messages', {
+      productId: currentConv.productId,
+      receiverId: currentConv.otherId,
+      content
+    });
+    input.value = '';
+    loadMessages();
+    // 更新会话列表
+    loadConversations();
+  } catch (e) { showToast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+function startPolling() {
+  if (pollingTimer) clearInterval(pollingTimer);
+  pollingTimer = setInterval(() => {
+    if (currentConv) loadMessages();
+    loadConversations(); // 更新未读数
+  }, 3000);
+}
+
+function stopPolling() {
+  if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
+}
+
+function showSidebar() {
+  document.getElementById('chatSidebar').classList.add('show');
+}
+
+function goToOtherProfile() {
+  if (currentConv) location.href = `/profile.html?id=${currentConv.otherId}`;
+}
+
+function goToProduct() {
+  if (currentConv) location.href = `/product.html?id=${currentConv.productId}`;
+}
+
+// 页面可见性变化时控制轮询
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopPolling();
+  else if (currentConv) startPolling();
+});
+
+// 登录/注册表单
+document.getElementById('loginForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const r = await api.post('/api/login', { username: fd.get('username'), password: fd.get('password') });
+    currentUser = r;
+    showToast('登录成功', 'success');
+    closeModal('loginModal');
+    updateNavbar(true);
+    init();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+document.getElementById('registerForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  if (fd.get('password') !== fd.get('password2')) { showToast('两次密码不一致', 'error'); return; }
+  try {
+    const r = await api.post('/api/register', { username: fd.get('username'), password: fd.get('password'), phone: fd.get('phone') });
+    currentUser = r;
+    showToast('注册成功', 'success');
+    closeModal('registerModal');
+    updateNavbar(true);
+    init();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+// 点击遮罩关闭弹窗
+$$('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+});
+
+// ESC 关闭弹窗
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') $$('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+});
+
+// 初始化
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
