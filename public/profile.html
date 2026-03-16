@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人中心 - 闲置集市</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/" class="navbar-brand"><span>🛍️</span> 闲置集市</a>
+    <div class="navbar-actions"></div>
+  </div>
+</nav>
+
+<div class="profile-header">
+  <div class="profile-header-inner">
+    <div class="profile-avatar-wrap">
+      <img src="/img/default-avatar.png" class="profile-avatar" id="profileAvatar">
+    </div>
+    <div>
+      <div class="profile-name" id="profileName">加载中...</div>
+      <div class="profile-bio" id="profileBio"></div>
+      <div class="profile-stats">
+        <div class="profile-stat"><div class="num" id="statProducts">0</div><div class="label">发布</div></div>
+        <div class="profile-stat"><div class="num" id="statFavorites">0</div><div class="label">收藏</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="section">
+    <div class="tabs" id="tabs">
+      <button class="tab-btn active" onclick="switchTab('products')">📦 我的发布</button>
+      <button class="tab-btn" onclick="switchTab('favorites')">❤️ 我的收藏</button>
+      <button class="tab-btn" onclick="switchTab('messages')">💬 消息</button>
+      <button class="tab-btn" onclick="switchTab('settings')">⚙️ 设置</button>
+    </div>
+
+    <div class="tab-content active" id="tab-products">
+      <div id="myProducts" class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="tab-content" id="tab-favorites">
+      <div id="myFavorites" class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="tab-content" id="tab-messages">
+      <div id="myMessages" class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="tab-content" id="tab-settings">
+      <div style="max-width:480px">
+        <form id="settingsForm">
+          <div class="form-group">
+            <label class="form-label">手机号</label>
+            <input name="phone" id="settingsPhone" class="form-control" placeholder="方便买家联系">
+          </div>
+          <div class="form-group">
+            <label class="form-label">个人简介</label>
+            <textarea name="bio" id="settingsBio" class="form-control" placeholder="介绍一下自己..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">保存修改</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer><p>© 2024 闲置集市</p></footer>
+<script src="/js/app.js"></script>
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', ['products','favorites','messages','settings'][i]===name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name==='products') loadMyProducts();
+  if (name==='favorites') loadMyFavorites();
+  if (name==='messages') loadMyMessages();
+  if (name==='settings') loadSettings();
+}
+
+async function loadProfile() {
+  try {
+    const user = await api.get('/api/me');
+    document.getElementById('profileName').textContent = user.username;
+    document.getElementById('profileBio').textContent = user.bio || '这个人很懒，什么都没写~';
+    document.getElementById('settingsPhone').value = user.phone || '';
+    document.getElementById('settingsBio').value = user.bio || '';
+  } catch { location.href = '/'; }
+}
+
+async function loadMyProducts() {
+  const el = document.getElementById('myProducts');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const products = await api.get('/api/my/products');
+    document.getElementById('statProducts').textContent = products.length;
+    if (!products.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>还没有发布商品</h3><p><a href="/" style="color:var(--primary)">去发布第一件闲置</a></p></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="product-grid">${products.map(p => `
+      <div class="product-card" onclick="location.href='/product.html?id=${p.id}'">
+        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img">` : `<div class="product-img-placeholder">📷</div>`}
+        ${p.status!=='active'?`<span class="status-badge status-${p.status}">${p.status==='sold'?'已售出':'已预订'}</span>`:''}
+        <div class="product-info">
+          <div class="product-title">${p.title}</div>
+          <div class="product-price">${formatPrice(p.price)}</div>
+          <div class="product-meta"><span>${p.condition}</span><span>${formatTime(p.created_at)}</span></div>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>${e.message}</h3></div>`; }
+}
+
+async function loadMyFavorites() {
+  const el = document.getElementById('myFavorites');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const products = await api.get('/api/my/favorites');
+    document.getElementById('statFavorites').textContent = products.length;
+    if (!products.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">❤️</div><h3>还没有收藏</h3><p><a href="/" style="color:var(--primary)">去发现好物</a></p></div>`;
+      return;
+    }
+    el.innerHTML = `<div class="product-grid">${products.map(p => `
+      <div class="product-card" onclick="location.href='/product.html?id=${p.id}'">
+        ${p.images?.[0] ? `<img src="${p.images[0]}" class="product-img">` : `<div class="product-img-placeholder">📷</div>`}
+        <div class="product-info">
+          <div class="product-title">${p.title}</div>
+          <div class="product-price">${formatPrice(p.price)}</div>
+          <div class="product-meta"><span>${p.username}</span><span>${p.condition}</span></div>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>${e.message}</h3></div>`; }
+}
+
+async function loadMyMessages() {
+  const el = document.getElementById('myMessages');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const msgs = await api.get('/api/my/messages');
+    if (!msgs.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">💬</div><h3>暂无消息</h3></div>`;
+      return;
+    }
+    el.innerHTML = msgs.map(m => `
+      <div style="display:flex;align-items:center;gap:14px;padding:16px;background:#fff;border-radius:var(--radius);margin-bottom:10px;cursor:pointer;box-shadow:var(--shadow)" onclick="location.href='/product.html?id=${m.product_id}'">
+        <img src="${m.other_avatar||'/img/default-avatar.png'}" style="width:48px;height:48px;border-radius:50%;object-fit:cover">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700">${m.other_username}</div>
+          <div style="font-size:13px;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.content}</div>
+          <div style="font-size:12px;color:var(--text-light);margin-top:2px">${m.product_title}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);white-space:nowrap">${formatTime(m.created_at)}</div>
+        ${!m.is_read && m.receiver_id===currentUser?.userId ? `<span class="badge">新</span>` : ''}
+      </div>
+    `).join('');
+  } catch (e) { el.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>${e.message}</h3></div>`; }
+}
+
+async function loadSettings() {
+  // Already loaded in loadProfile
+}
+
+document.getElementById('settingsForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    await fetch('/api/me', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: fd.get('phone'), bio: fd.get('bio') }),
+      credentials: 'include'
+    });
+    showToast('保存成功', 'success');
+    loadProfile();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await checkSession();
+  if (!currentUser) { location.href = '/'; return; }
+  loadProfile();
+  loadMyProducts();
+});
+</script>
+</body>
+</html>
