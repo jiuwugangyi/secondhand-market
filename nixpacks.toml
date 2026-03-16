@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["mvn clean package -DskipTests -q"]
+
+[start]
+cmd = "java -jar target/secondhand-market-1.0.0.jar"

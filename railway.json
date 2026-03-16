@@ -4,9 +4,9 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "node server.js",
-    "healthcheckPath": "/",
-    "healthcheckTimeout": 100,
+    "startCommand": "java -jar target/secondhand-market-1.0.0.jar",
+    "healthcheckPath": "/api/session",
+    "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

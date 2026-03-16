@@ -4,3 +4,5 @@ public/uploads/*
 !public/uploads/.gitkeep
 .env
 *.log
+
+target/
